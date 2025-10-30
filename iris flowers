@@ -1,0 +1,23 @@
+#Classify iris flowers into different species based on their petal and sepal measurements using
+#support vector machines technique.
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+iris = sns.load_dataset('iris')
+print(iris.head())
+print(iris.describe())
+sns.pairplot(iris, hue='species')
+plt.suptitle('Pairplot of Iris Dataset', y=1.02)
+plt.show()
+x= iris.drop(columns='species')
+y=
+iris['species']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size =0.3, random_state =42)
+model = SVC(kernel='linear') # You can experiment with 'rbf', 'poly', 'sigmoid' as well
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print(f'Accuracy: {accuracy * 100:.2f}%')
