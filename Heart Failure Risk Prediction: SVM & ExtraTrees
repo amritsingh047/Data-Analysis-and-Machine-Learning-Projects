@@ -1,0 +1,268 @@
+Step 1 - Import Required Libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings("ignore")
+
+from sklearn.model_selection import StratifiedKFold, train_test_split, cross_validate
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import (
+    accuracy_score, roc_auc_score, f1_score, recall_score,
+    precision_score, confusion_matrix, ConfusionMatrixDisplay
+)
+
+from sklearn.svm import SVC
+from sklearn.ensemble import ExtraTreesClassifier
+
+RANDOM_STATE = 42
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings("ignore")
+
+from sklearn.model_selection import StratifiedKFold, train_test_split, cross_validate
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import (
+    accuracy_score, roc_auc_score, f1_score, recall_score,
+    precision_score, confusion_matrix, ConfusionMatrixDisplay
+)
+
+from sklearn.svm import SVC
+from sklearn.ensemble import ExtraTreesClassifier
+
+RANDOM_STATE = 42
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings("ignore")
+
+from sklearn.model_selection import StratifiedKFold, train_test_split, cross_validate
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import (
+    accuracy_score, roc_auc_score, f1_score, recall_score,
+    precision_score, confusion_matrix, ConfusionMatrixDisplay
+)
+
+from sklearn.svm import SVC
+from sklearn.ensemble import ExtraTreesClassifier
+
+RANDOM_STATE = 42
+Step 2 - Load the Dataset
+
+CSV_PATH = "/kaggle/input/heart-failure-dataset/heart.csv"
+
+df = pd.read_csv(CSV_PATH)
+print("Shape:", df.shape)
+
+df.head()
+
+Step 3 - Quick EDA
+candidate_targets = ["DEATH_EVENT", "HeartDisease", "target", "Outcome"]
+target = next((c for c in candidate_targets if c in df.columns), None)
+assert target is not None, f"No known target found. Columns: {list(df.columns)}"
+
+print(f"Using target: {target}\n")
+print("Dtypes:\n", df.dtypes, "\n")
+print("Missing values per column:\n", df.isna().sum(), "\n")
+
+print("Target counts:\n", df[target].value_counts())
+print("Target proportion:\n", df[target].value_counts(normalize=True).round(3))
+
+#pick common columns for quick plots if present
+plot_cols = [c for c in ["Age", "age", "MaxHR", "Oldpeak", "ejection_fraction"] if c in df.columns]
+
+fig, axes = plt.subplots(1, 1 + len(plot_cols), figsize=(4 * (1 + len(plot_cols)), 3))
+
+ax0 = axes if len(plot_cols) == 0 else axes[0]
+sns.countplot(x=target, data=df, ax=ax0); ax0.set_title(target)
+
+if len(plot_cols) > 0:
+    for i, col in enumerate(plot_cols, start=1):
+        sns.histplot(df[col], bins=20, ax=axes[i])
+        axes[i].set_title(col)
+
+plt.tight_layout(); plt.show()
+
+#correlation heatmap (numeric only)
+num_cols_all = [c for c in df.columns if np.issubdtype(df[c].dtype, np.number)]
+if len(num_cols_all) >= 2:
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(df[num_cols_all].corr(), cmap="coolwarm", center=0)
+    plt.title("Correlation Heatmap (numeric)")
+    plt.show()
+
+Step 4 - Define Features and Target (numeric + categorical)
+Separate X and y, split numeric vs categorical to build the right preprocessing for each model.
+y = df[target].astype(int).copy()
+X = df.drop(columns=[target]).copy()
+
+num_cols = [c for c in X.columns if np.issubdtype(X[c].dtype, np.number)]
+cat_cols = [c for c in X.columns if c not in num_cols]
+
+print(f"X shape: {X.shape} | numeric: {len(num_cols)} | categorical: {len(cat_cols)} | positive rate: {y.mean():.3f}")
+Step 5 - Train/Test Split
+Create a stratified holdout split (80/20) to preserve class ratio and allow unbiased final evaluation.
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.20, random_state=RANDOM_STATE, stratify=y
+)
+
+Step 6 - Cross-Validation Setup
+Configure Stratified K-Fold and common scoring metrics.
+
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+scoring = {
+    "accuracy": "accuracy",
+    "roc_auc": "roc_auc",
+    "f1": "f1",
+    "recall": "recall",
+    "precision": "precision"
+}
+
+def summarize_cv(cvres, name):
+    return pd.DataFrame([{
+        "Model": name,
+        "Acc_mean":  cvres["test_accuracy"].mean(),
+        "AUC_mean":  cvres["test_roc_auc"].mean(),
+        "F1_mean":   cvres["test_f1"].mean(),
+        "Rec_mean":  cvres["test_recall"].mean(),
+        "Pre_mean":  cvres["test_precision"].mean(),
+    }]).round(4)
+Step 7 - Model 1: SVM (RBF) with proper preprocessing
+Standardize numeric features and one-hot encode categoricals; fit an RBF-kernel SVM with class-balanced loss. Run CV and summarize metrics.
+
+preprocess_svm = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), num_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
+    ],
+    remainder="drop"
+)
+
+svm = Pipeline([
+    ("pre", preprocess_svm),
+    ("clf", SVC(kernel="rbf", probability=True, class_weight="balanced",
+                C=1.0, gamma="scale", random_state=RANDOM_STATE))
+])
+
+svm_cv = cross_validate(svm, X_train, y_train, cv=cv, scoring=scoring, n_jobs=-1, return_train_score=False)
+
+def summarize_cv(cvres, name):
+    import pandas as pd
+    return pd.DataFrame([{
+        "Model": name,
+        "Acc_mean":  cvres["test_accuracy"].mean(),
+        "AUC_mean":  cvres["test_roc_auc"].mean(),
+        "F1_mean":   cvres["test_f1"].mean(),
+        "Rec_mean":  cvres["test_recall"].mean(),
+        "Pre_mean":  cvres["test_precision"].mean(),
+    }]).round(4)
+
+svm_cv_table = summarize_cv(svm_cv, "SVM_RBF")
+svm_cv_table
+Step 8 - Model 2: ExtraTrees with one-hot encoding
+One-hot encode categoricals (numeric passthrough) and train ExtraTrees with class weights. Run CV and summarize metrics.
+
+preprocess_et = ColumnTransformer(
+    transformers=[
+        ("num", "passthrough", num_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
+    ],
+    remainder="drop"
+)
+
+et = Pipeline([
+    ("pre", preprocess_et),
+    ("clf", ExtraTreesClassifier(
+        n_estimators=800,
+        max_depth=10,
+        max_features="sqrt",
+        min_samples_leaf=2,
+        class_weight="balanced",
+        random_state=RANDOM_STATE,
+        n_jobs=-1
+    ))
+])
+
+et_cv = cross_validate(et, X_train, y_train, cv=cv, scoring=scoring, n_jobs=-1, return_train_score=False)
+et_cv_table = summarize_cv(et_cv, "ExtraTrees")
+et_cv_table
+
+Step 9 - CV Comparison
+Combine CV summaries and sort by ROC-AUC to pick a stronger candidate before holdout testing.
+
+cv_table = pd.concat([svm_cv_table, et_cv_table], ignore_index=True)
+cv_table.sort_values("AUC_mean", ascending=False).reset_index(drop=True)
+
+Step 10 - Holdout Evaluation
+Fit on full training data and evaluate on the holdout with Accuracy, ROC-AUC, F1, Recall, and Precision.
+
+#--- SVM (RBF) ---
+svm.fit(X_train, y_train)
+svm_prob = svm.predict_proba(X_test)[:, 1]
+svm_pred = (svm_prob >= 0.5).astype(int)
+
+svm_acc = accuracy_score(y_test, svm_pred)
+svm_auc = roc_auc_score(y_test, svm_prob)
+svm_f1  = f1_score(y_test, svm_pred)
+svm_rec = recall_score(y_test, svm_pred)
+svm_pre = precision_score(y_test, svm_pred)
+print(f"SVM (RBF) — HOLDOUT | Acc={svm_acc:.3f} | AUC={svm_auc:.3f} | F1={svm_f1:.3f} | Recall={svm_rec:.3f} | Precision={svm_pre:.3f}")
+
+#--- ExtraTrees ---
+et.fit(X_train, y_train)
+et_prob = et.predict_proba(X_test)[:, 1]
+et_pred = (et_prob >= 0.5).astype(int)
+
+et_acc = accuracy_score(y_test, et_pred)
+et_auc = roc_auc_score(y_test, et_prob)
+et_f1  = f1_score(y_test, et_pred)
+et_rec = recall_score(y_test, et_pred)
+et_pre = precision_score(y_test, et_pred)
+print(f"ExtraTrees — HOLDOUT | Acc={et_acc:.3f} | AUC={et_auc:.3f} | F1={et_f1:.3f} | Recall={et_rec:.3f} | Precision={et_pre:.3f}")
+
+#holdout comparison table
+holdout_tbl = pd.DataFrame({
+    "Model": ["SVM_RBF", "ExtraTrees"],
+    "Accuracy": [svm_acc, et_acc],
+    "ROC-AUC": [svm_auc, et_auc],
+    "F1": [svm_f1, et_f1],
+    "Recall": [svm_rec, et_rec],
+    "Precision": [svm_pre, et_pre],
+}).round(4).sort_values("ROC-AUC", ascending=False).reset_index(drop=True)
+
+holdout_tbl
+
+Step 11 - Confusion Matrices (Holdout)
+Visualize error patterns (false positives/negatives) for both models.
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+cm_svm = confusion_matrix(y_test, svm_pred)
+ConfusionMatrixDisplay(cm_svm).plot(ax=axes[0], colorbar=False)
+axes[0].set_title("SVM (RBF) — Confusion Matrix")
+
+cm_et = confusion_matrix(y_test, et_pred)
+ConfusionMatrixDisplay(cm_et).plot(ax=axes[1], colorbar=False)
+axes[1].set_title("ExtraTrees — Confusion Matrix")
+
+plt.tight_layout()
+plt.show()
